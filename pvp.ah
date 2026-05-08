@@ -1,0 +1,219 @@
+#!/bin/bash
+# pvp.sh — PvP v1.0.0 (multi-conta)
+#
+# HORÁRIOS: a cada 13 minutos dentro das janelas:
+#   05:00 → 11:00
+#   13:00 → 17:00
+#   19:00 → 21:00
+#
+# Lista completa gerada automaticamente.
+# Janela de tolerância: 4 minutos após cada horário.
+
+PVP_WINDOW=4   # minutos de tolerância após o horário
+
+# Gera lista de horários válidos (minutos desde meia-noite)
+_pvp_times() {
+  python3 -c "
+windows = [(5,0,11,0),(13,0,17,0),(19,0,21,0)]
+for sh,sm,eh,em in windows:
+    t = sh*60+sm
+    end = eh*60+em
+    while t <= end:
+        print(t)
+        t += 13
+" 2>/dev/null || awk 'BEGIN {
+  # Janela 1: 05:00-11:00
+  t=300; while(t<=660){print t; t+=13}
+  # Janela 2: 13:00-17:00
+  t=780; while(t<=1020){print t; t+=13}
+  # Janela 3: 19:00-21:00
+  t=1140; while(t<=1260){print t; t+=13}
+}'
+}
+
+_pvp_is_time() {
+  local h m now_min
+  printf -v h '%(%H)T' -1
+  printf -v m '%(%M)T' -1
+  h=$((10#$h))
+  m=$((10#$m))
+  now_min=$(( h * 60 + m ))
+
+  while IFS= read -r slot_min; do
+    local diff=$(( now_min - slot_min ))
+    if [ "$diff" -ge 0 ] && [ "$diff" -lt "$PVP_WINDOW" ]; then
+      return 0
+    fi
+  done < <(_pvp_times)
+
+  return 1
+}
+
+pvp_mode() {
+  _pvp_is_time || return 0
+
+  echo "[${ACC}] [pvp] sessao iniciada"
+  _status_write "pvp"
+  log "pvp sessao iniciada" "INFO"
+
+  # 1 batalha por slot (evita sobreposição com próximo slot)
+  local tries=0 entered=0
+
+  while [ "$tries" -lt 3 ]; do
+    tries=$(( tries + 1 ))
+    echo "[${ACC}] [pvp] tentativa $tries/3"
+
+    if ! _pvp_join; then
+      echo "[${ACC}] [pvp] sem joinLink"
+      break
+    fi
+
+    if _pvp_wait_start 50; then
+      entered=1
+      break
+    else
+      echo "[${ACC}] [pvp] batalha nao iniciou — a sair"
+      _pvp_leave
+      echo "[${ACC}] [pvp] aguarda 60s"
+      sleep 60s
+    fi
+  done
+
+  if [ "$entered" -eq 1 ]; then
+    _pvp_fight
+  else
+    echo "[${ACC}] [pvp] sem batalha apos 3 tentativas"
+  fi
+
+  echo "[${ACC}] [pvp] sessao concluida"
+  _status_write "online"
+}
+
+_pvp_join() {
+  fetch_page "/pvp"
+  if ! _session_active; then return 1; fi
+
+  local join
+  join=$(grep -o -E \
+    'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-joinLink' \
+    "$SRC" | head -n1)
+
+  [ -z "$join" ] && return 1
+
+  echo "[${ACC}] [pvp] a aplicar"
+  fetch_page "$join"
+  sleep_rand 500 800
+  return 0
+}
+
+_pvp_wait_start() {
+  local max_wait="$1"
+  local elapsed=0
+  echo "[${ACC}] [pvp] a aguardar inicio (max ${max_wait}s)..."
+
+  while [ "$elapsed" -lt "$max_wait" ]; do
+    if grep -q 'attackRegularShellLink' "$SRC" 2>/dev/null; then
+      echo "[${ACC}] [pvp] batalha iniciada!"
+      return 0
+    fi
+
+    local ref
+    ref=$(grep -o -E \
+      'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-refreshLink' \
+      "$SRC" | head -n1)
+    [ -n "$ref" ] && fetch_page "$ref" || fetch_page "/pvp"
+
+    sleep 5s
+    elapsed=$(( elapsed + 5 ))
+  done
+
+  return 1
+}
+
+_pvp_leave() {
+  local escape
+  escape=$(grep -o -E \
+    'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-escapeLink' \
+    "$SRC" | head -n1)
+  [ -n "$escape" ] && fetch_page "$escape" && sleep 2s
+}
+
+_pvp_fight() {
+  local shots=0
+  local timeout=$(( $(date +%s) + 600 ))
+  local hp_max=""
+  local last_repair=0
+  local last_maneuver=0
+  local repair_threshold=30
+
+  echo "[${ACC}] [pvp] em combate"
+
+  while [ "$(date +%s)" -lt "$timeout" ]; do
+    _session_active || break
+
+    local atk repair maneuver escape
+    atk=$(grep -o -E \
+      'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-attackRegularShellLink' \
+      "$SRC" | head -n1)
+    repair=$(grep -o -E \
+      'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-repairLink' \
+      "$SRC" | head -n1)
+    maneuver=$(grep -o -E \
+      'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-maneuverLink' \
+      "$SRC" | head -n1)
+    escape=$(grep -o -E \
+      'pvp[^"]*\?[0-9]+-[0-9]+\.ILinkListener-escapeLink' \
+      "$SRC" | head -n1)
+
+    # Fim de batalha
+    [ -z "$atk" ] && [ -z "$escape" ] && {
+      echo "[${ACC}] [pvp] batalha terminou ($shots disparos)"
+      log "pvp fim: $shots disparos" "OK"
+      break
+    }
+
+    local hp_now
+    hp_now=$(grep -o -E \
+      'value-block lh1[^>]*>[^<]*<[^>]*>[^<]*>[0-9]+' "$SRC" \
+      | grep -o -E '[0-9]+$' | sed -n '1p')
+    [ -z "$hp_max" ] && [ -n "$hp_now" ] && hp_max="$hp_now"
+
+    local now=$(date +%s)
+    local since_repair=$(( now - last_repair ))
+    local since_maneuver=$(( now - last_maneuver ))
+
+    local hp_pct=""
+    [ -n "$hp_now" ] && [ "${hp_max:-0}" -gt 0 ] && \
+      hp_pct=$(awk -v n="$hp_now" -v m="$hp_max" \
+        'BEGIN{printf"%.0f",n/m*100}' 2>/dev/null)
+
+    # Repair: HP <= 30%
+    if [ "${hp_pct:-100}" -le "$repair_threshold" ] && \
+       [ "$since_repair" -ge 5 ] 2>/dev/null; then
+      last_repair=$now
+      if [ -n "$repair" ]; then
+        echo "[${ACC}] [pvp] REPAIR HP: $hp_now (${hp_pct}%)"
+        fetch_page_fast "$repair"
+        continue
+      fi
+    fi
+
+    # Manobra: após receber dano
+    if [ -n "$maneuver" ] && [ "$since_maneuver" -ge 20 ] 2>/dev/null; then
+      if grep -q 'causou-lhe danos' "$SRC" 2>/dev/null; then
+        echo "[${ACC}] [pvp] manobra"
+        fetch_page_fast "$maneuver"
+        last_maneuver=$now
+        continue
+      fi
+    fi
+
+    # Disparo: 6s fixos
+    [ -z "$atk" ] && { sleep 1s; continue; }
+    sleep 6s
+    fetch_page_fast "$atk"
+    shots=$(( shots + 1 ))
+    echo "[${ACC}] [pvp] #${shots} | HP: ${hp_now:-?} (${hp_pct:-?}%)"
+
+  done
+}
