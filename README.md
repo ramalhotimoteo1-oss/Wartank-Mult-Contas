@@ -1,182 +1,162 @@
-# Wartank Multi-Bot
-
-Bot multi-conta para wartank-pt.net com sessões isoladas, painel em tempo real e recuperação automática de falhas.
-
----
-
-## Funcionalidades
-
-| Função | Descrição |
-|--------|-----------|
-| **Login** | Automático via `accounts.txt`. Credenciais encriptadas em base64 por conta. |
-| **Adiante a Combate** | Executa 9 disparos (3 inimigos) a cada ciclo. |
-| **PVP** | Batalha automática nos horários definidos (ver tabela abaixo). |
-
----
-
-## Isolamento entre contas
-
-Cada conta corre num processo independente com:
-
-- Cookies próprios (`~/.wartank/<conta>/cookies.txt`)
-- Credenciais próprias (`~/.wartank/<conta>/cript_file`)
-- Log próprio (`~/.wartank/<conta>/bot.log`)
-- Ficheiro de status próprio (`~/.wartank/status/<conta>.status`)
-
-**Se uma conta morrer, as outras continuam a funcionar.**
-
----
-
-## Instalação
-
-```bash
-# 1. Clonar / extrair o bot
-cd ~/wartank-multi
-
-# 2. Dar permissões
+Wartank Multi-Contas (versão leve)
+Bot multi-conta para wartank-pt.net, pensado para contas secundárias no Android (Termux).
+Versão leve: XP, missões, recursos da base e PvP — sem o ciclo completo do Wartank-Macro (conta principal).
+O que faz
+Módulo
+Função
+Adiante a combate
+XP — horários fixos a cada 40 min (ex.: 00:00, 00:40, 01:20…)
+PvP
+05:23, 11:23 e 21:23 — até 3 batalhas por sessão
+CW
+Guerra de clã, se estiver activa
+Missões
+Recolha de recompensas (simples)
+Base
+Pegar produção, mina (minério), polígono (buff grátis de ataque), sala de armas
+Escolta
+Combate + startMasking (recarregamento no jogo)
+Assault
+Missão especial — cooldown de 20 h após o fim
+Não inclui: PvE, DM, Divisão (company), mercado prata→ouro (desligado por defeito).
+Isolamento entre contas
+Cada conta corre num processo à parte:
+~/.wartank/
+├── accounts.conf          ← lista de usernames
+├── pids/                  ← PIDs dos workers
+├── status/                ← painel em tempo real
+└── <conta>/
+    ├── cookies.txt
+    ├── cript_file         ← credenciais (base64, chmod 600)
+    ├── bot.log
+    ├── SRC
+    └── last_assault_ts    ← cooldown assault
+Se uma conta cair, as outras continuam.
+Requisitos
+Termux (F-Droid) ou Linux
+bash, curl, grep, sed, awk, base64
+pkg update && pkg upgrade -y
+pkg install git curl bash
+Instalação
+cd ~
+git clone https://github.com/ramalhotimoteo1-oss/Wartank-Mult-Contas.git
+cd ~/Wartank-Mult-Contas
 chmod +x *.sh
-
-# 3. Editar accounts.txt
-nano accounts.txt
-```
-
-### Formato do accounts.txt
-
-```
-username1:password1
-username2:password2
-username3:password3
-```
-
-- Uma conta por linha
-- Separador: `:`
-- Linhas começadas por `#` são ignoradas
-
----
-
-## Utilização
-
-```bash
-# Iniciar todas as contas + painel em tempo real
+Contas
+bash controller.sh add      # username + password
+bash controller.sh remove   # remove uma conta
+As passwords não ficam em texto no accounts.conf — só o username. As credenciais vão para ~/.wartank/<conta>/cript_file.
+Utilização
+# Iniciar todas as contas + painel
 bash controller.sh
 
-# Parar todos os workers
+# Parar tudo
 bash controller.sh stop
 
-# Ver painel uma única vez
+# Painel uma vez
 bash controller.sh status
-```
-
-Para parar tudo enquanto o painel está activo: **Ctrl+C**
-
----
-
-## Painel em tempo real
-
-O painel actualiza a cada 5 segundos e mostra por conta:
-
-| Coluna | Significado |
-|--------|-------------|
-| Conta | Username |
-| Estado | `online` / `battle` / `pvp` / `login` / `reconect.` / `erro login` / `stopped` / `morto` |
-| Nivel | Nível do jogador |
-| Fuel | Combustível actual |
-| Ultima act. | Hora da última actualização de estado |
-
----
-
-## Configuração avançada (opcional)
-
-As seguintes variáveis de ambiente podem ser definidas antes de iniciar:
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `BATTLE_LA` | `3` | Segundos de atraso entre disparos no Adiante a Combate |
-| `BATTLE_SHOTS` | `9` | Número de disparos por sessão de Adiante a Combate |
-| `BATTLE_TIMEOUT` | `600` | Timeout máximo (segundos) por sessão de combate |
-
+Com o painel activo: Ctrl+C para tudo.
+Recomendado no telemóvel:
+termux-wake-lock
+Sugestão: 2 a 4 contas em paralelo no mesmo dispositivo.
+Painel
+Actualiza a cada 5 segundos:
+Coluna
+Significado
+Conta
+Username
+Estado
+online / battle / pvp / login / reconect. / erro login / stopped / morto
+Niv
+Nível
+Fuel
+Combustível
+Última
+Hora da última actualização
+Configuração (igual para todas)
+Variáveis de ambiente opcionais (antes de controller.sh):
+Variável
+Padrão
+Descrição
+BATTLE_LA
+3
+Segundos entre disparos (Adiante)
+BATTLE_SHOTS
+9
+Disparos por sessão de battle
+BATTLE_WINDOW
+3
+Janela (min) do slot de battle
+FUNC_battle
+y
+Adiante a combate
+FUNC_missions
+y
+Missões
+FUNC_buildings
+y
+Base
+FUNC_pvp
+y
+PvP
+FUNC_cw
+y
+Guerra de clã
+FUNC_convoy
+y
+Escolta
+FUNC_assault
+y
+Assault
+ASSAULT_COOLDOWN_SEC
+72000
+20 h após assault
 Exemplo:
-```bash
-BATTLE_LA=4 BATTLE_SHOTS=9 bash controller.sh
-```
+FUNC_assault=n BATTLE_SHOTS=9 bash controller.sh
+Horários
+Adiante a combate: a cada 40 minutos (minuto total múltiplo de 40), janela de 3 min, combustível ≥ 90.
+PvP: 05:23, 11:23, 21:23 (janela de 4 min).
+Assault: só de novo ~20 h depois do fim/destruição.
+Estrutura do projecto
+Wartank-Mult-Contas/
+├── controller.sh       ← start / stop / status / add / remove
+├── worker.sh           ← ciclo por conta
+├── core.sh
+├── login.sh
+├── status.sh
+├── combat_common.sh
+├── battle.sh
+├── pvp.sh
+├── cw.sh
+├── convoy.sh
+├── assault.sh
+├── missions.sh
+├── base.sh
+└── README.md
+Conta principal vs multi
+Wartank-Macro
 
----
-
-## Horários PVP
-
-O PVP ocorre a cada **13 minutos** dentro de três janelas diárias.  
-Janela de tolerância: **4 minutos** após cada horário.
-
-**Total: 57 batalhas PVP por dia.**
-
-### Janela 1 — 05:00 às 11:00
-
-| | | | | | | | | | |
-|--|--|--|--|--|--|--|--|--|--|
-| 05:00 | 05:13 | 05:26 | 05:39 | 05:52 | 06:05 | 06:18 | 06:31 | 06:44 | 06:57 |
-| 07:10 | 07:23 | 07:36 | 07:49 | 08:02 | 08:15 | 08:28 | 08:41 | 08:54 | 09:07 |
-| 09:20 | 09:33 | 09:46 | 09:59 | 10:12 | 10:25 | 10:38 | 10:51 | 11:00 | — |
-
-**29 batalhas nesta janela.**
-
-### Janela 2 — 13:00 às 17:00
-
-| | | | | | | | | | |
-|--|--|--|--|--|--|--|--|--|--|
-| 13:00 | 13:13 | 13:26 | 13:39 | 13:52 | 14:05 | 14:18 | 14:31 | 14:44 | 14:57 |
-| 15:10 | 15:23 | 15:36 | 15:49 | 16:02 | 16:15 | 16:28 | 16:41 | 16:54 | 17:00 |
-
-**20 batalhas nesta janela.**
-
-### Janela 3 — 19:00 às 21:00
-
-| | | | | | | | | | |
-|--|--|--|--|--|--|--|--|--|--|
-| 19:00 | 19:13 | 19:26 | 19:39 | 19:52 | 20:05 | 20:18 | 20:31 | 20:44 | 20:57 |
-| 21:00 | — | — | — | — | — | — | — | — | — |
-
-**11 batalhas nesta janela.**
-
----
-
-## Estrutura de ficheiros
-
-```
-wartank-multi/
-├── controller.sh     ← Ponto de entrada principal
-├── worker.sh         ← Motor por conta (chamado pelo controlador)
-├── core.sh           ← Funções base (fetch, log, sessão)
-├── login.sh          ← Login automático
-├── battle.sh         ← Adiante a Combate
-├── pvp.sh            ← PVP com horários
-├── status.sh         ← Helpers de estado
-├── accounts.txt      ← Contas (editar antes de usar)
-└── README.md         ← Este ficheiro
-
-~/.wartank/
-├── pids/             ← PIDs dos workers activos
-├── status/           ← Estado em tempo real por conta
-└── <conta>/          ← Dados isolados por conta
-    ├── cookies.txt
-    ├── cript_file
-    ├── bot.log
-    └── SRC
-```
-
----
-
-## Notas de segurança
-
-- As passwords são armazenadas em base64 (ofuscação, não encriptação forte).
-- Os ficheiros de credenciais têm permissões `600` (só o dono lê).
-- Nunca partilhes o ficheiro `accounts.txt` nem a pasta `~/.wartank/`.
-
----
-
-## Compatibilidade
-
-Testado em:
-- **Termux** (Android)
-- **Ubuntu / Debian** (Linux)
-
-Dependências: `bash`, `curl`, `grep`, `sed`, `awk`, `base64`, `python3` (opcional, tem fallback em awk)
+Este repo
+Uso
+1 conta (completa)
+Várias contas (leve)
+PvE / DM / Divisão
+Sim
+Não
+PvP
+Sim
+Sim
+Base / missões / escolta
+Sim
+Sim
+Segurança
+Credenciais em base64 + chmod 600 (ofuscação, não criptografia forte)
+Não partilhes ~/.wartank/ nem o ecrã com passwords
+Não commits com accounts.conf ou cript_file
+Actualizar
+cd ~/Wartank-Mult-Contas
+git pull
+chmod +x *.sh
+Apoio
+Doações / contacto: ramirosh015@gmail.com
+Projecto sem fins lucrativos — ajuda a manter o servidor PT-BR activo.
