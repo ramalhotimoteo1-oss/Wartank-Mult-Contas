@@ -1,15 +1,32 @@
 #!/bin/bash
-# battle.sh — Adiante a Combate v1.0.0 (multi-conta)
+# battle.sh — Adiante a Combater v1.5.0
+# HTML real confirmado — fluxo completo de 6 disparos
+#
+# FLUXO:
+#   /battle → opponents-N-attackLink2 "Disparar"
+#   → disparo → lastOpponentPanel-attackLink2 "Acabar de matar"
+#   → disparo → lastOpponentPanel-attackLink2 "Destruir"
+#   → disparo → opponents-N-attackLink2 "Disparar" (novo ciclo)
+#
+# REGEX UNIVERSAL: battle?X-X.ILinkListener-*-attackLink2
+#   Cobre todos os estados sem logica condicional
+#   SRC nao e recarregado apos disparo — resposta ja tem proximo link
+#
+# COMBUSTIVEL:
+#   Cada disparo ~29-30 combustivel
+#   3 inimigos = 9 disparos = 270 combustivel
+#   Combustivel=0: /battle mostra inimigos mas NAO dispara
+#   Estrategia: BATTLE_SHOTS=9 (3 inimigos), depois esperar recarga
 
 adiante_a_combate() {
-  echo "[${ACC}] [battle] inicio"
-  _status_write "battle"
+  [ "$FUNC_battle" = "n" ] && return 0
+
+  echo "[battle] inicio"
 
   fetch_page "/battle"
 
   if ! grep -q '<title>Combate</title>' "$SRC" 2>/dev/null; then
-    echo "[${ACC}] [battle] pagina invalida"
-    log "battle pagina invalida" "WARN"
+    echo "[battle] pagina invalida: $(grep -o '<title>[^<]*</title>' "$SRC" 2>/dev/null)"
     return 0
   fi
 
@@ -19,39 +36,41 @@ adiante_a_combate() {
   local total_shots=0
   local ATK_LINK
 
-  echo "[${ACC}] [battle] meta: $target_shots disparos | LA: ${la}s"
+  echo "[battle] meta: $target_shots disparos | LA: ${la}s"
 
   while [ "$total_shots" -lt "$target_shots" ] && [ "$(date +%s)" -lt "$timeout" ]; do
 
-    _session_active || { echo "[${ACC}] [battle] sessao perdida"; break; }
+    _session_active || { echo "[battle] sessao perdida"; break; }
 
+    # Fora da pagina de combate
     if ! grep -q '<title>Combate</title>' "$SRC" 2>/dev/null; then
-      echo "[${ACC}] [battle] saiu do combate"
+      echo "[battle] saiu do combate"
       break
     fi
 
+    # Regex universal — cobre Disparar, Acabar de matar, Destruir
     ATK_LINK=$(grep -o -E \
       'battle\?[0-9]+-[0-9]+\.ILinkListener-[^"]+attackLink2' \
       "$SRC" | head -n1)
 
     if [ -z "$ATK_LINK" ]; then
-      echo "[${ACC}] [battle] sem link — reload"
+      echo "[battle] sem link — reload"
       fetch_page "/battle"
       ATK_LINK=$(grep -o -E \
         'battle\?[0-9]+-[0-9]+\.ILinkListener-[^"]+attackLink2' \
         "$SRC" | head -n1)
-      [ -z "$ATK_LINK" ] && { echo "[${ACC}] [battle] sem link apos reload"; break; }
+      [ -z "$ATK_LINK" ] && { echo "[battle] sem link apos reload"; break; }
     fi
 
     sleep "${la}s"
     fetch_page "$ATK_LINK"
     sleep_rand 200 400
     total_shots=$(( total_shots + 1 ))
-    echo "[${ACC}] [battle] disparo $total_shots/$target_shots"
+    echo "[battle] disparo $total_shots/$target_shots"
+    # NAO recarrega /battle — SRC ja tem proximo link
 
   done
 
-  echo "[${ACC}] [battle] fim: $total_shots disparos"
-  log "battle fim: $total_shots disparos" "OK"
-  _status_write "online"
+  echo "[battle] fim: $total_shots disparos"
+  go_hangar
 }
